@@ -12,6 +12,7 @@ const SpeechGenerator: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const [hasApiKeySelected, setHasApiKeySelected] = useState<boolean>(false); // New state for API key status
 
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
@@ -32,8 +33,38 @@ const SpeechGenerator: React.FC = () => {
     };
   }, [downloadUrl]);
 
+  // Check for API key on component mount
+  useEffect(() => {
+    const checkApiKey = async () => {
+      if (window.aistudio && typeof window.aistudio.hasSelectedApiKey === 'function') {
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        setHasApiKeySelected(hasKey);
+      } else {
+        // Assume key is available if aistudio API is not present (e.g., local dev without special runtime)
+        setHasApiKeySelected(true);
+      }
+    };
+    checkApiKey();
+  }, []);
+
+  const handleSelectApiKey = async () => {
+    if (window.aistudio && typeof window.aistudio.openSelectKey === 'function') {
+      await window.aistudio.openSelectKey();
+      // As per guidelines, assume selection was successful and update state
+      setHasApiKeySelected(true);
+      setError(null); // Clear any previous API key related error
+    } else {
+      setError("API key selection not available in this environment.");
+    }
+  };
+
   const handleGenerateSpeech = async () => {
     setError(null);
+    if (!hasApiKeySelected) {
+      setError("An API Key must be selected before generating speech. Please click 'Select API Key'.");
+      return;
+    }
+
     if (downloadUrl) {
       URL.revokeObjectURL(downloadUrl); // Clean up previous download URL
       setDownloadUrl(null);
@@ -73,11 +104,13 @@ const SpeechGenerator: React.FC = () => {
 
     } catch (err: any) {
       console.error(err);
-      // Fix: Explicitly check error type to ensure a string message is passed to setError.
-      // This makes the error handling more robust and prevents potential type mismatches.
       let errorMessage: string;
       if (err instanceof Error) {
         errorMessage = err.message;
+        // If the error specifically indicates a key issue, update the state
+        if (errorMessage.includes("API key might be invalid or not selected.")) {
+          setHasApiKeySelected(false); // Prompt user to select key again
+        }
       } else if (typeof err === 'string') {
         errorMessage = err;
       } else {
@@ -108,6 +141,30 @@ const SpeechGenerator: React.FC = () => {
     <div className="bg-white shadow-lg rounded-xl p-6 md:p-10 w-full max-w-2xl mx-auto flex flex-col space-y-6">
       <h1 className="text-4xl font-extrabold text-center text-gray-900 mb-6">Pujiverse Voice Studio</h1>
 
+      {!hasApiKeySelected && (
+        <div className="bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded-lg relative text-center flex flex-col items-center space-y-3" role="alert">
+          <p className="font-bold text-lg">API Key Required</p>
+          <p className="text-base">Please select your Gemini API key to use the voice generation service.</p>
+          <button
+            onClick={handleSelectApiKey}
+            className="mt-2 bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-2 px-5 rounded-lg shadow-md transition-all duration-300"
+          >
+            Select API Key
+          </button>
+          <p className="text-sm mt-2">
+            Learn more about billing for Gemini API:{" "}
+            <a
+              href="https://ai.google.dev/gemini-api/docs/billing"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline text-yellow-800 hover:text-yellow-900"
+            >
+              Billing Documentation
+            </a>
+          </p>
+        </div>
+      )}
+
       <div className="flex flex-col space-y-4">
         <label htmlFor="script" className="text-lg font-semibold text-gray-700">Script:</label>
         <textarea
@@ -117,6 +174,7 @@ const SpeechGenerator: React.FC = () => {
           value={script}
           onChange={(e) => setScript(e.target.value)}
           rows={8}
+          disabled={!hasApiKeySelected} // Disable script input if no API key
         ></textarea>
       </div>
 
@@ -128,6 +186,7 @@ const SpeechGenerator: React.FC = () => {
             className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-800"
             value={selectedVoice.id}
             onChange={handleVoiceChange}
+            disabled={!hasApiKeySelected}
           >
             {VOICE_OPTIONS.map((option) => (
               <option key={option.id} value={option.id}>
@@ -145,6 +204,7 @@ const SpeechGenerator: React.FC = () => {
             className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-800"
             value={selectedEmotion}
             onChange={handleEmotionChange}
+            disabled={!hasApiKeySelected}
           >
             <option value="neutral">Neutral</option>
             <option value="cheerful">Cheerful</option>
@@ -166,6 +226,7 @@ const SpeechGenerator: React.FC = () => {
             className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-800"
             value={selectedLanguage}
             onChange={handleLanguageChange}
+            disabled={!hasApiKeySelected}
           >
             {LANGUAGE_OPTIONS.map((option) => (
               <option key={option.id} value={option.id}>
@@ -182,11 +243,11 @@ const SpeechGenerator: React.FC = () => {
       <button
         onClick={handleGenerateSpeech}
         className={`w-full py-4 px-6 rounded-lg text-xl font-bold transition-all duration-300
-          ${loading
+          ${loading || !script.trim() || !hasApiKeySelected
             ? 'bg-blue-300 cursor-not-allowed animate-pulse'
             : 'bg-blue-600 hover:bg-blue-700 text-white shadow-md hover:shadow-lg'
           }`}
-        disabled={loading || !script.trim()}
+        disabled={loading || !script.trim() || !hasApiKeySelected}
       >
         {loading ? 'Generating Speech...' : 'Generate Voice-over'}
       </button>
@@ -206,7 +267,7 @@ const SpeechGenerator: React.FC = () => {
             className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 flex items-center space-x-2"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 0 01.293.707V19a2 2 0 01-2 2z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
             <span>Download Voice-over (.wav)</span>
           </a>
