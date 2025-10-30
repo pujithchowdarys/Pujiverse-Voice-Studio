@@ -1,0 +1,5 @@
+{
+  "name": "Pujiverse Voice Studio",
+  "description": "Create voice-overs from text using various Gemini text-to-speech voices. Select different vocal characteristics like age, gender, and emotion for your script.",
+  "requestFramePermissions": []
+}
